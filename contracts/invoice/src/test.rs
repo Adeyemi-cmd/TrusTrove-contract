@@ -822,7 +822,11 @@ fn test_multiple_invoices_have_unique_ids() {
     // All IDs should be unique due to incrementing counter
     for i in 0..ids.len() {
         for j in (i + 1)..ids.len() {
-            assert_ne!(ids.get_unchecked(i), ids.get_unchecked(j), "Invoice IDs should be unique");
+            assert_ne!(
+                ids.get_unchecked(i),
+                ids.get_unchecked(j),
+                "Invoice IDs should be unique"
+            );
         }
     }
 }
