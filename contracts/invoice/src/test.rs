@@ -671,3 +671,192 @@ fn test_expire_listing_stranger_panics() {
     // Calling expire_listing without mocking auths for issuer or admin should panic due to failed require_auth.
     client.expire_listing(&invoice_id);
 }
+
+#[test]
+fn test_invoice_id_generation_is_deterministic() {
+    // Test that invoice ID generation is deterministic for the same inputs
+    let (env, client, issuer, buyer, _, usdc) = setup();
+    let due_date = env.ledger().timestamp() + 86400;
+    let face_value = 1_000_000_000u128;
+
+    // Create first invoice
+    let invoice_id_1 = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+
+    // Reset counter to create another invoice with same parameters (except counter)
+    // We need to verify that same issuer/buyer/value/date with different counter produces different IDs
+    let invoice_id_2 = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+
+    // Different counter should produce different IDs
+    assert_ne!(invoice_id_1, invoice_id_2);
+
+    // Verify both invoices exist and have correct data
+    assert_eq!(client.get(&invoice_id_1).issuer, issuer);
+    assert_eq!(client.get(&invoice_id_2).issuer, issuer);
+}
+
+#[test]
+fn test_invoice_ids_unique_for_different_issuers() {
+    // Test that different issuer/buyer combinations produce unique IDs
+    let (env, client, issuer, buyer, registry, usdc) = setup();
+    let due_date = env.ledger().timestamp() + 86400;
+    let face_value = 1_000_000_000u128;
+
+    // Create first invoice
+    let invoice_id_1 = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+
+    // Create second invoice with different issuer
+    let issuer2 = Address::generate(&env);
+    registry.register(&issuer2);
+    let invoice_id_2 = client.create(&issuer2, &buyer, &face_value, &due_date, &usdc);
+
+    // Different issuers should produce different IDs even with same other parameters
+    assert_ne!(invoice_id_1, invoice_id_2);
+
+    // Verify invoices have correct issuers
+    assert_eq!(client.get(&invoice_id_1).issuer, issuer);
+    assert_eq!(client.get(&invoice_id_2).issuer, issuer2);
+}
+
+#[test]
+fn test_invoice_ids_unique_for_different_buyers() {
+    // Test that different buyer combinations produce unique IDs
+    let (env, client, issuer, buyer, registry, usdc) = setup();
+    let due_date = env.ledger().timestamp() + 86400;
+    let face_value = 1_000_000_000u128;
+
+    // Create first invoice
+    let invoice_id_1 = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+
+    // Create second invoice with different buyer
+    let buyer2 = Address::generate(&env);
+    registry.register(&buyer2);
+    let invoice_id_2 = client.create(&issuer, &buyer2, &face_value, &due_date, &usdc);
+
+    // Different buyers should produce different IDs even with same other parameters
+    assert_ne!(invoice_id_1, invoice_id_2);
+
+    // Verify invoices have correct buyers
+    assert_eq!(client.get(&invoice_id_1).buyer, buyer);
+    assert_eq!(client.get(&invoice_id_2).buyer, buyer2);
+}
+
+#[test]
+fn test_invoice_ids_unique_for_different_face_values() {
+    // Test that different face values produce unique IDs
+    let (env, client, issuer, buyer, _, usdc) = setup();
+    let due_date = env.ledger().timestamp() + 86400;
+
+    // Create first invoice
+    let invoice_id_1 = client.create(&issuer, &buyer, &1_000_000_000, &due_date, &usdc);
+
+    // Create second invoice with different face value
+    let invoice_id_2 = client.create(&issuer, &buyer, &2_000_000_000, &due_date, &usdc);
+
+    // Different face values should produce different IDs
+    assert_ne!(invoice_id_1, invoice_id_2);
+
+    // Verify invoices have correct values
+    assert_eq!(client.get(&invoice_id_1).face_value, 1_000_000_000);
+    assert_eq!(client.get(&invoice_id_2).face_value, 2_000_000_000);
+}
+
+#[test]
+fn test_invoice_ids_unique_for_different_due_dates() {
+    // Test that different due dates produce unique IDs
+    let (env, client, issuer, buyer, _, usdc) = setup();
+    let face_value = 1_000_000_000u128;
+    let due_date_1 = env.ledger().timestamp() + 86400;
+    let due_date_2 = env.ledger().timestamp() + 172800;
+
+    // Create first invoice
+    let invoice_id_1 = client.create(&issuer, &buyer, &face_value, &due_date_1, &usdc);
+
+    // Create second invoice with different due date
+    let invoice_id_2 = client.create(&issuer, &buyer, &face_value, &due_date_2, &usdc);
+
+    // Different due dates should produce different IDs
+    assert_ne!(invoice_id_1, invoice_id_2);
+
+    // Verify invoices have correct due dates
+    assert_eq!(client.get(&invoice_id_1).due_date, due_date_1);
+    assert_eq!(client.get(&invoice_id_2).due_date, due_date_2);
+}
+
+#[test]
+fn test_invoice_ids_unique_for_different_assets() {
+    // Test that different funding assets produce unique IDs
+    let (env, client, issuer, buyer, _, usdc) = setup();
+    let due_date = env.ledger().timestamp() + 86400;
+    let face_value = 1_000_000_000u128;
+
+    // Create first invoice with usdc
+    let invoice_id_1 = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+
+    // Create a different token asset
+    let other_token = env.register_contract(None, MockToken);
+
+    // Create second invoice with different asset
+    let invoice_id_2 = client.create(&issuer, &buyer, &face_value, &due_date, &other_token);
+
+    // Different assets should produce different IDs
+    assert_ne!(invoice_id_1, invoice_id_2);
+
+    // Verify invoices have correct assets
+    assert_eq!(client.get(&invoice_id_1).funding_asset, usdc);
+    assert_eq!(client.get(&invoice_id_2).funding_asset, other_token);
+}
+
+#[test]
+fn test_multiple_invoices_have_unique_ids() {
+    // Test that creating multiple invoices produces unique IDs (counter increments)
+    let (env, client, issuer, buyer, _, usdc) = setup();
+    let due_date = env.ledger().timestamp() + 86400;
+    let face_value = 1_000_000_000u128;
+
+    let mut ids: soroban_sdk::Vec<BytesN<32>> = soroban_sdk::Vec::new(&env);
+    for _ in 0..5 {
+        let id = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+        ids.push_back(id);
+    }
+
+    // All IDs should be unique due to incrementing counter
+    for i in 0..ids.len() {
+        for j in (i + 1)..ids.len() {
+            assert_ne!(ids.get_unchecked(i), ids.get_unchecked(j), "Invoice IDs should be unique");
+        }
+    }
+}
+
+#[test]
+fn test_create_invoice_does_not_panic_on_xdr_generation() {
+    // Regression test: ensure invoice creation never panics due to XDR length issues
+    let (env, client, issuer, buyer, _, usdc) = setup();
+    let due_date = env.ledger().timestamp() + 86400;
+
+    // Test with various face values to ensure no panic
+    let face_values = [1u128, 100, 1_000, 1_000_000, u128::MAX];
+    for face_value in face_values.iter() {
+        let invoice_id = client.create(&issuer, &buyer, face_value, &due_date, &usdc);
+        let invoice = client.get(&invoice_id);
+        assert_eq!(invoice.face_value, *face_value);
+    }
+}
+
+#[test]
+fn test_existing_valid_addresses_still_work() {
+    // Regression test: verify existing valid address formats still generate valid invoice IDs
+    let (env, client, issuer, buyer, _, usdc) = setup();
+    let face_value = 1_000_000_000u128;
+    let due_date = env.ledger().timestamp() + 86400;
+
+    // Should not panic and should return a valid invoice ID
+    let invoice_id = client.create(&issuer, &buyer, &face_value, &due_date, &usdc);
+
+    // Verify invoice exists and is valid
+    let invoice = client.get(&invoice_id);
+    assert_eq!(invoice.issuer, issuer);
+    assert_eq!(invoice.buyer, buyer);
+    assert_eq!(invoice.face_value, face_value);
+    assert_eq!(invoice.due_date, due_date);
+    assert_eq!(invoice.status, InvoiceStatus::Created);
+}

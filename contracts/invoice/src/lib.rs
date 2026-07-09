@@ -149,11 +149,13 @@ impl InvoiceContract {
         let mut hash_input = Bytes::new(&env);
         let issuer_xdr = issuer.clone().to_xdr(&env);
         let buyer_xdr = buyer.clone().to_xdr(&env);
-        for i in 0..32 {
-            hash_input.push_back(issuer_xdr.get(i).unwrap());
+
+        // Safely append all XDR bytes without assuming a fixed length
+        for b in issuer_xdr.iter() {
+            hash_input.push_back(b);
         }
-        for i in 0..32 {
-            hash_input.push_back(buyer_xdr.get(i).unwrap());
+        for b in buyer_xdr.iter() {
+            hash_input.push_back(b);
         }
         for b in face_value.to_be_bytes() {
             hash_input.push_back(b);
@@ -166,8 +168,8 @@ impl InvoiceContract {
         }
         {
             let asset_xdr = funding_asset.clone().to_xdr(&env);
-            for i in 0..32 {
-                hash_input.push_back(asset_xdr.get(i).unwrap());
+            for b in asset_xdr.iter() {
+                hash_input.push_back(b);
             }
         }
         let invoice_id: BytesN<32> = env.crypto().sha256(&hash_input).into();
