@@ -152,15 +152,20 @@ fn setup() -> TestEnv {
 }
 
 fn create_and_list(te: &TestEnv, funding_asset: &Address) -> BytesN<32> {
+    create_and_list_with_params(te, funding_asset, 10_000_000_000, 200)
+}
+
+fn create_and_list_with_params(
+    te: &TestEnv,
+    funding_asset: &Address,
+    face_value: u128,
+    discount_bps: u32,
+) -> BytesN<32> {
     let due_date = te.env.ledger().timestamp() + 86400;
-    let invoice_id = te.invoice.create(
-        &te.issuer,
-        &te.buyer,
-        &10_000_000_000,
-        &due_date,
-        funding_asset,
-    );
-    te.invoice.list_for_financing(&invoice_id, &200);
+    let invoice_id =
+        te.invoice
+            .create(&te.issuer, &te.buyer, &face_value, &due_date, funding_asset);
+    te.invoice.list_for_financing(&invoice_id, &discount_bps);
     invoice_id
 }
 
@@ -397,6 +402,51 @@ fn test_withdraw_more_than_owned_panics() {
 }
 
 // ============== FUND INVOICE TESTS ==============
+
+#[test]
+fn test_fund_invoice_rejects_zero_funded_amount() {
+    let te = setup();
+    te.pool.deposit(&te.lp, &100_000_000_000);
+    let invoice_id = create_and_list_with_params(&te, &te.usdc_id, 1, 5000);
+
+    let before = te.pool.get_stats();
+    let result = te.pool.try_fund_invoice(&invoice_id);
+    assert!(result.is_err(), "zero funded amount should be rejected");
+
+    let after = te.pool.get_stats();
+    assert_eq!(after.total_funded, before.total_funded);
+    assert_eq!(after.active_invoice_count, before.active_invoice_count);
+    assert_eq!(after.available_liquidity, before.available_liquidity);
+    assert_eq!(te.invoice.get_status(&invoice_id), 1);
+}
+
+#[test]
+fn test_fund_invoice_allows_boundary_amount_of_one() {
+    let te = setup();
+    te.pool.deposit(&te.lp, &100_000_000_000);
+    let invoice_id = create_and_list_with_params(&te, &te.usdc_id, 1, 0);
+
+    let result = te.pool.fund_invoice(&invoice_id);
+    assert!(result);
+
+    let stats = te.pool.get_stats();
+    assert_eq!(stats.total_funded, 1);
+    assert_eq!(stats.active_invoice_count, 1);
+}
+
+#[test]
+fn test_fund_invoice_succeeds_for_normal_amount() {
+    let te = setup();
+    te.pool.deposit(&te.lp, &100_000_000_000);
+    let invoice_id = create_and_list(&te, &te.usdc_id);
+
+    let result = te.pool.fund_invoice(&invoice_id);
+    assert!(result);
+
+    let stats = te.pool.get_stats();
+    assert_eq!(stats.total_funded, 9_800_000_000);
+    assert_eq!(stats.active_invoice_count, 1);
+}
 
 #[test]
 fn test_fund_invoice_reduces_available_liquidity() {
