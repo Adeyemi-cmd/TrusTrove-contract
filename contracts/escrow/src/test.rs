@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, testutils::Address as _, testutils::Events as _, Address,
-    BytesN, Env, Symbol, TryFromVal, Vec,
+    contract, contractimpl, contracttype,
+    testutils::{Address as _, Events as _, Ledger},
+    Address, BytesN, Env, Symbol, TryFromVal, Vec,
 };
 
 use crate::{
@@ -509,6 +510,40 @@ fn test_get_locked_returns_zero_after_release_to_pool() {
 
     client.release_to_pool(&invoice_id, &amount);
     assert_eq!(client.get_locked(&invoice_id), 0);
+}
+
+#[test]
+fn test_get_locked_at_returns_zero_when_empty() {
+    let (env, client, _admin, _pool, _usdc_id, _contract_id) = setup();
+    let invoice_id = generate_invoice_id(&env, 20);
+
+    assert_eq!(client.get_locked_at(&invoice_id), 0);
+}
+
+#[test]
+fn test_get_locked_at_returns_timestamp_when_locked() {
+    let (env, client, _admin, _pool, _usdc_id, _contract_id) = setup();
+    let invoice_id = generate_invoice_id(&env, 21);
+    let amount: u128 = 1_000_000_000;
+
+    client.lock(&invoice_id, &amount);
+    let locked_at = client.get_locked_at(&invoice_id);
+    assert_eq!(locked_at, env.ledger().timestamp());
+}
+
+#[test]
+fn test_get_locked_at_returns_zero_after_release() {
+    let (env, client, _admin, _pool, _usdc_id, _contract_id) = setup();
+    env.ledger().set_timestamp(1_000_000);
+    let invoice_id = generate_invoice_id(&env, 22);
+    let issuer = Address::generate(&env);
+    let amount: u128 = 1_000_000_000;
+
+    client.lock(&invoice_id, &amount);
+    assert!(client.get_locked_at(&invoice_id) > 0);
+
+    client.release_to_issuer(&invoice_id, &issuer);
+    assert_eq!(client.get_locked_at(&invoice_id), 0);
 }
 
 // ============================================================================
