@@ -287,7 +287,7 @@ impl EscrowContract {
 
         caller.require_auth();
         if caller != admin && caller != pool {
-            panic!("Not authorized");
+            panic_with_error!(&env, EscrowError::NotAuthorized);
         }
 
         let record: EscrowRecord = env.storage().persistent().get(&key).unwrap();
