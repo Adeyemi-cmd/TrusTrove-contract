@@ -260,7 +260,7 @@ impl EscrowContract {
     ///
     /// # Panics
     /// * `NotInitialized` if the contract has not been initialized and a lock record exists for the invoice.
-    /// * Panics with `"Not authorized"` if `caller` is neither the admin nor the pool contract.
+    /// * `NotAuthorized` if `caller` is neither the admin nor the pool contract.
     ///
     /// # Returns
     /// * `bool` - `true` if default handling completed, `false` if no lock exists.
@@ -287,7 +287,7 @@ impl EscrowContract {
 
         caller.require_auth();
         if caller != admin && caller != pool {
-            panic!("Not authorized");
+            panic_with_error!(&env, EscrowError::NotAuthorized);
         }
 
         let record: EscrowRecord = env.storage().persistent().get(&key).unwrap();
