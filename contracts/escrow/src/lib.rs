@@ -260,7 +260,7 @@ impl EscrowContract {
     ///
     /// # Panics
     /// * `NotInitialized` if the contract has not been initialized and a lock record exists for the invoice.
-    /// * Panics with `"Not authorized"` if `caller` is neither the admin nor the pool contract.
+    /// * `NotAuthorized` if `caller` is neither the admin nor the pool contract.
     ///
     /// # Returns
     /// * `bool` - `true` if default handling completed, `false` if no lock exists.
