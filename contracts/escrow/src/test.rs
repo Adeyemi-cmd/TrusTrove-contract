@@ -5,7 +5,9 @@ use soroban_sdk::{
     BytesN, Env, Symbol, TryFromVal, Vec,
 };
 
-use crate::{EscrowAction, EscrowContract, EscrowContractClient, EscrowEvent};
+use crate::{
+    DataKey, EscrowAction, EscrowContract, EscrowContractClient, EscrowEvent, EscrowRecord,
+};
 
 #[contract]
 pub struct MockToken;
@@ -626,4 +628,93 @@ fn test_handle_default_requires_pool_authorization() {
     env.set_auths(&[]);
     // No auth entries present — require_auth() on the pool caller must fail
     client.handle_default(&invoice_id, &pool);
+}
+
+// ============================================================================
+// Pre-initialization tests — typed NotInitialized (Contract error #6)
+// ============================================================================
+
+/// `lock` must panic with `NotInitialized` rather than the cryptic
+/// host-side `Option::unwrap()` error when called before `initialize()`.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_lock_uninitialized_panics_with_typed_not_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, EscrowContract);
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let invoice_id = generate_invoice_id(&env, 100);
+    // mock_all_auths bypasses pool.require_auth so the unwrap on the
+    // uninitialized PoolContract is observable as the typed error.
+    client.lock(&invoice_id, &1_000_000_000);
+}
+
+/// `release_to_issuer` must panic with `NotInitialized` rather than the
+/// cryptic host-side `Option::unwrap()` error when called before `initialize()`.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_release_to_issuer_uninitialized_panics_with_typed_not_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, EscrowContract);
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let invoice_id = generate_invoice_id(&env, 101);
+    let issuer = Address::generate(&env);
+    client.release_to_issuer(&invoice_id, &issuer);
+}
+
+/// `release_to_pool` must panic with `NotInitialized` rather than the
+/// cryptic host-side `Option::unwrap()` error when called before `initialize()`.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_release_to_pool_uninitialized_panics_with_typed_not_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, EscrowContract);
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let invoice_id = generate_invoice_id(&env, 102);
+    client.release_to_pool(&invoice_id, &1_000_000_000);
+}
+
+/// When a stale lock record exists but the contract has not been initialized,
+/// `handle_default` must panic with `NotInitialized` rather than the cryptic
+/// `Option::unwrap()` error.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_handle_default_uninitialized_with_existing_record_panics_with_typed_not_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, EscrowContract);
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let invoice_id = generate_invoice_id(&env, 103);
+    let caller = Address::generate(&env);
+
+    // Seed a stale lock record so handle_default passes its early
+    // `has(Locked)` guard and reaches the unwrap on instance storage.
+    env.as_contract(&contract_id, || {
+        let record = EscrowRecord {
+            invoice_id: invoice_id.clone(),
+            amount: 1_000_000_000,
+            locked_at: env.ledger().timestamp(),
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::Locked(invoice_id.clone()), &record);
+    });
+
+    client.handle_default(&invoice_id, &caller);
+}
+
+/// Sanity: without a lock record, `handle_default` short-circuits to `false`
+/// before touching instance storage, so no `NotInitialized` panic occurs
+/// even when the contract has not been initialized.
+#[test]
+fn test_handle_default_uninitialized_without_record_returns_false() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, EscrowContract);
+    let client = EscrowContractClient::new(&env, &contract_id);
+    let invoice_id = generate_invoice_id(&env, 104);
+    let caller = Address::generate(&env);
+    assert!(!client.handle_default(&invoice_id, &caller));
 }
